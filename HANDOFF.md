@@ -81,7 +81,7 @@ make -C csrc          # builds the C serializer harness
 python3 tools/selftest.py
 ```
 
-Expected: **19/19**. If `assets/` is absent, the script stops and says where it was
+Expected: **20/20**. If `assets/` is absent, the script stops and says where it was
 looking. If the C harness is not built, or the SuuntoLink descriptor is missing, it says so
 and skips that step.
 
