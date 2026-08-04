@@ -18,7 +18,7 @@ for the application: a fork of `guiguoz/opensportsync` (React Native + `libambit
 | 2 - remaining format fields | **done** |
 | 3 - serializer, Python and C | **done**, bit-exact against the captures |
 | 4 - first real write (reset) | **done** on hardware 2026-08-04, and an undelete on top of it |
-| 5 - first real route | **ready**, needs the watch |
+| 5 - first real route | **done** on hardware 2026-08-04 |
 | 6 - Android USB-OTG | **to do**, see below |
 | 7 - BLE | **in progress**: GATT roles settled, token hypothesis confirmed on hardware, one open flag |
 | 8 - iOS | **unblocked**: a Mac and an iPhone are available, and a plain central is enough |
@@ -160,7 +160,19 @@ the commit. Two things the run also settled. The watch's own `0x0b21` reply matc
 region address and size this project had assumed, live, for the first time. And the POIs went
 with the routes, which is the subject of point 5 of milestone 6 above and is now fixed.
 
-Milestone 5, a real route, is the same procedure with one more command and has not been run.
+**Milestone 5 is done too, the same day.** A route built from a GPX file alone was written to
+the watch and the watch shows it: 336 points simplified from the GPX's 1066, the point body sent
+as 1032, 1032, 1032 and 968 bytes, descriptors, both index tables, both closing hashes, and the
+two waypoints appear on the watch as expected. The POI survived, which is the `0x0b25` restore
+working on hardware with real content rather than in rehearsal.
+
+So the chain the project set out to build is closed end to end: a GPX file, simplified the way
+SuuntoLink simplifies, serialized, framed, sent over USB, and displayed by the watch. Nothing
+between the file and the screen is inferred any more.
+
+One number worth keeping as a sanity check on the two runs: the rehearsal announced 4755 payload
+bytes and the live write sent 4547. The 208-byte difference is exactly the POI list, 265 bytes
+from the capture in rehearsal against the 57 the watch really holds.
 
 `tools/write_nav.py` produces exactly the SuuntoLink bytes: verified payload by payload against
 `routedelete` (5 payloads) and `route12km` (13 payloads), SHA-256 hash and POI restore included.
