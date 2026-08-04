@@ -28,6 +28,11 @@ complete specification is in [`tools/README.md`](tools/README.md): memory map, s
 coordinate formula, simplification, closing hash, reproduced quirks. Do not duplicate it
 here, refer to it.
 
+Everything that is blocked on the watch is blocked on one person, and this document is not
+the right shape for them: it explains why rather than what to type. [`RUNBOOK.md`](RUNBOOK.md)
+is that list, written to be followed without reading anything else. Keep it in step with the
+milestones below.
+
 ## What the repository does not contain
 
 `assets/` and `full-assets/` are deliberately kept out of the repository: proprietary
