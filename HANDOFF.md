@@ -167,10 +167,16 @@ Milestone 5, a real route, is the same procedure with one more command and has n
 HID framing is proven by a round trip over **4724 messages and 47117 reports of 64 bytes**
 re-encoded identically.
 
-Before the first write: **write down by hand the routes and POIs present on the watch**,
-because a successful write overwrites the whole navigation database. Also try reading the
-region back through the pmem20 path (`0x0b17` with an address): if it works, we gain a real
-backup and a `navigation_read`.
+**The read path now exists**, which is what this section used to ask for. `0x0b17` takes
+`[u32 address][u32 length]` and answers with the same eight bytes then the data;
+`./tools/write_nav.py nav` walks the two navigation regions that way, decodes them with the
+serializer's own structures, and `--save` keeps the raw bytes. So a backup no longer means
+copying names off the screen by hand, and `navigation_read` for the application is a solved
+problem rather than a hope.
+
+The read validates itself: the regions carry a CRC over the descriptors and the points. It
+matches on all six captures that hold a database. An empty one is the documented exception,
+where the field is a literal zero rather than the CRC of nothing.
 
 Three experiments, in this order, one command each:
 
