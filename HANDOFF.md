@@ -215,6 +215,41 @@ ndkVersion "27.1.12297006"        react-native 0.84.1
    selective, and the last message is the restore. `write_nav.py` now does the same, and its
    `0x0b25` reproduces the capture's byte for byte.
 
+### A POI has no altitude, and it is not an oversight
+
+Asked 2026-08-04, on the theory that the Suunto app's import into the Ambit3 drops it. The
+first half is right: the app does have an altitude and the watch does not keep it. The second
+half is not, in that there is nowhere for it to go.
+
+The application side carries one. `POST suunto://SDS/LegacyPOI/<serial>` in `suuntoapp.log`
+sends, per POI, `{"creation":..., "type":0, "latitude":..., "longitude":..., "name":...,
+"altitude":25.3}`, with real values.
+
+The device side has no field for it, three ways:
+
+- the 2.4.17 schema gives `WayPoint` and `PointsOfInterest.PointOfInterest` exactly ten fields
+  each, and neither includes an altitude. Every `Altitude` in the whole descriptor belongs to
+  the unit setting, the alti/baro profile, the logbook or a live sample;
+- the Kailash's 2.0.5 descriptor, a different watch and a much older firmware, declares the
+  **identical** ten fields. So this is the family-wide SML definition, not a 2.4.17 quirk -
+  which is what André's own note suggested checking, and it holds;
+- the 52-byte binary waypoint descriptor is fully accounted for: 4 + 4 + 16 + 16 + 12, and the
+  12-byte tail is a magic, five date bytes, a rank, a type and three zero bytes. There is no
+  spare field, and the mutation test already covers every written byte.
+
+So SuuntoLink drops the altitude because the destination cannot represent it. Worth stating
+plainly in the application: a POI keeps its name and position, and loses its elevation.
+
+**A POI's `Timestamp` is the SDS `creation` field, plain Unix epoch rendered as ISO 8601 in
+UTC.** `creation=1774640967` is `2026-03-27T19:49:27`, which is exactly what the watch stores
+for that POI, and the same holds for the other three. That closes a small unknown and it is a
+welcome contrast with the **route** timestamp, whose epoch was never pinned down and sits in
+`ambit_format.ROUTE_TIME_EPOCH` as an empirical `1953-11-25T17:31:44`. Writing a POI needs no
+such guess.
+
+Incidentally the SDS list holds more POIs than the watch does, which is the "use on the watch"
+toggle doing its job.
+
 ### What the watch can already do with POIs, and what that leaves us
 
 Established on hardware 2026-08-04. A POI can be created three ways without any of our code:
