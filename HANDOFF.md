@@ -260,11 +260,25 @@ the answer splits:
   and they are populated: 15 to 21 m on a run, with `Ascent=9` and `Descent=6`. Nothing of
   SuuntoLink's is involved in producing those. `-32768`/`32767` on other moves is the nillable
   sentinel, a recording with no altitude fix.
-- **A POI still cannot, whoever writes it**, because the record has ten fields and no room for
-  an eleventh. Reading one back off the watch cannot change that, though it does answer a
-  question we do have: what the watch puts in `Type`, `SubType`, `TypeIndex` and `Flags`, which
-  are zero in every capture because SuuntoLink authored all of them. `./tools/write_nav.py pois`
-  reads them.
+- **A POI still cannot, whoever writes it.** Read back from the watch, a POI it created
+  itself, with a live fix and a barometer at hand, has the same ten fields and no altitude.
+  That closes the question: it is the format, not the software.
+
+  The same read answered what SuuntoLink had been hiding, since it writes zero in all four:
+  **`Type=17`, `SubType=0`, `TypeIndex=1`, `Flags=1`.** 17 is the value `ambit_format` already
+  knew as `WAYPOINT_TYPE_DEFAULT`, the `type` byte of the binary waypoint tail - so the watch
+  types its own POI as a Waypoint while SuuntoLink leaves imported ones at 0, and `TypeIndex`
+  numbers it, matching the auto-generated name `POI 01`. Those are the values to write when we
+  create a POI rather than preserve one. `Flags=1` remains unexplained.
+
+  Coordinates came back as `506236692`, all seven digits, so a POI captured from GPS keeps the
+  full precision the record allows; only the typed-coordinate screen is limited to five.
+
+  It also broke something. `parse_sbem_poi_list` used to find the coordinates by skipping runs
+  of zero bytes, which only ever worked because those four fields were zero in every capture.
+  On this POI it raised `ValueError: subsection not found`. It now uses the known ten-field
+  layout, hardcoded rather than read from the schema so that `sbem_schema.py --verify` remains
+  an independent check of one against the other.
 
 Still open, and it is the interesting half of the objection: the watch can navigate a recorded
 activity, Navigation then Logbook. Whether that materialises an entry in the Routes region, and
