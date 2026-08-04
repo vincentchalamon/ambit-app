@@ -250,6 +250,31 @@ such guess.
 Incidentally the SDS list holds more POIs than the watch does, which is the "use on the watch"
 toggle doing its job.
 
+**What the watch itself produces, asked 2026-08-04.** Every POI and route examined so far
+reached the watch through Komoot, then the Suunto app, then SuuntoLink, so all of it is
+evidence about what SuuntoLink writes rather than what the watch can hold. Fair objection, and
+the answer splits:
+
+- **An activity the watch records does carry altitude.** Its own logbook index gives
+  `Header.Altitude.Min`, `.Max`, `.MinTime`, `.MaxTime` and a plain `Header.Altitude` per move,
+  and they are populated: 15 to 21 m on a run, with `Ascent=9` and `Descent=6`. Nothing of
+  SuuntoLink's is involved in producing those. `-32768`/`32767` on other moves is the nillable
+  sentinel, a recording with no altitude fix.
+- **A POI still cannot, whoever writes it**, because the record has ten fields and no room for
+  an eleventh. Reading one back off the watch cannot change that, though it does answer a
+  question we do have: what the watch puts in `Type`, `SubType`, `TypeIndex` and `Flags`, which
+  are zero in every capture because SuuntoLink authored all of them. `./tools/write_nav.py pois`
+  reads them.
+
+Still open, and it is the interesting half of the objection: the watch can navigate a recorded
+activity, Navigation then Logbook. Whether that materialises an entry in the Routes region, and
+therefore a route with per-point altitude that the watch itself filled in, is unknown and worth
+a look - `pois` and `logbook` are read-only, so it costs nothing to check before and after.
+
+Decoding a move's samples is a separate job, not started: the logbook index gives each move's
+flash range, `0x0b17` reads flash, and `assets/logbook/*.bin` holds ten of them saved by
+SuuntoLink, `PMEM` magic, to work against offline.
+
 **Not a casualty of the Suunto app transition**, which is the natural suspicion given how
 grudging Ambit support became after Movescount: the watch was nearly abandoned outright and
 SuuntoLink is the bare minimum added later, after community pressure. That era is real and this
