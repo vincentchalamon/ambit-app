@@ -299,27 +299,49 @@ is per-bond and not derived from anything stable like the serial, which is what 
 predicted. And as a side effect the key sitting in `ambit3full` is now stale, so that capture
 no longer carries a live secret.
 
-**The open question is `IsNspCapable`, which flipped 1 to 0.** In `ambit3full` it was 1 on
-every slot, including the empty ones and the HR belt, so 1 looks like the factory default and
-something actively set it to 0. Two readings, and they have opposite consequences:
+### `IsNspCapable` is not set by pairing, settled 2026-08-04
 
-- the flag is set by the **app-level** pairing flow, not by SMP, and the new bond was made
-  from the phone's Bluetooth settings rather than from inside an app that speaks NSP. Benign:
-  pair again from within the Suunto app and it should come back to 1.
-- or the flag **gates** the use of `EncodingKey` as a session token, in which case a bond
-  created outside the app is useless for our purpose and step 2 has to set it explicitly.
+`IsNspCapable` had flipped from 1 in `ambit3full` to 0 on the new bond, and the cheap reading
+was that the flag records how the pairing was made: from the phone's Bluetooth settings rather
+than from inside an app that speaks NSP. **Tested by pairing from inside the Suunto app. It
+still reads 0.** That reading is dead.
 
-Distinguishing them is cheap and comes before anything else on this milestone: pair from
-inside the Suunto app, read again, and see whether `IsNspCapable` returns to 1. If the modern
-app refuses to pair an Ambit3 at all, then the flag has to be written by us, which is step 2
-anyway.
+What the third read adds, and it is more useful than the answer itself:
 
-### Step 2, still to do
+- **The flag is 0 on all eight slots**, the seven empty ones included, where `ambit3full` had
+  1 on all eight. So it is not a per-bond attribute a pairing flow sets, it is a table-wide
+  value that something changed between the two.
+- **SuuntoLink is not what sets it.** Its `0x1101` in `ambit3full` writes the personal
+  settings and the eight `Pods`, and no `0x41` at all. Whatever wrote those 1s was something
+  else, most likely the Movescount phone app, which did speak NSP over BLE and no longer
+  exists.
+- **`IdentityResolvingKey` is unchanged across all three reads**, while `EncodingKey` and
+  `EncodingRnd` change at every pairing. That is exactly how BLE bonding behaves - the IRK
+  belongs to the phone's identity and persists, the LTK is generated per bond - and it is a
+  good independent check that these fields really are what the schema says.
+- The reply shrank from 589 to 572 bytes, which is the HR belt's 30-byte entry becoming an
+  empty 13-byte slot. The parsing accounts for every byte.
 
-Write a whitelist entry of your own through `0x1101`: your phone's MAC, a 16-byte
-`EncodingKey` you choose, and `IsNspCapable=1` given the above. Then open BLE and send those
-same 16 bytes as the NSP LOGIN body. If the watch accepts, the milestone closes with no
-reverse engineering at all. If it does not, fall back to recovering a derivation, below.
+So nothing available today sets `IsNspCapable=1`. We have to write it, which makes step 2 not
+just the next step but the only one. What remains genuinely unknown is narrower than before:
+whether the watch *enforces* the flag when validating a login, or merely records it. Only
+attempting the BLE login answers that.
+
+**A useful side effect: `0x1101` accepts a partial tree.** SuuntoLink's write in `ambit3full`
+sends 16 entries, not the 66 a read returns. So a whitelist entry can be written on its own,
+without having to reproduce the whole settings tree - and there is a byte-exact precedent in
+the capture to build it against, the same way the route writes were built.
+
+### Step 2, the only remaining path
+
+Write a whitelist entry through `0x1101`: the phone's MAC, a 16-byte `EncodingKey` of your
+choosing, `IsAuthenticated=1` and `IsNspCapable=1`. Then open BLE and send those same 16 bytes
+as the NSP LOGIN body. If the watch accepts, the milestone closes with no reverse engineering
+at all. If it does not, fall back to recovering a derivation, below.
+
+Note for whoever implements it: the write is the first thing in this project that modifies a
+region other than navigation, so build it the same way - produce the payload, diff it against
+the capture's `0x1101` for framing, and only then send it.
 
 Caveat: the whitelist is written by the pairing flow, so a key you inject may be overwritten,
 and link-layer encryption is a separate matter from the NSP login - Android will not let you
@@ -393,6 +415,14 @@ scan-and-connect is enough, and the unusual `CBPeripheralManager` design the APK
 for is not needed. Scanning finds nothing until "connect to mobile app" is triggered on the
 watch, so the UI has to tell the user to do that rather than waiting on an empty scan.
 
+Also observed while testing milestone 7: **the watch never appears in iOS Settings >
+Bluetooth**, before or after pairing, and can only be paired and unpaired from inside the
+Suunto app. The bond is real - the watch stores an LTK, an IRK and `IsAuthenticated=1` for the
+phone - but iOS keeps a BLE accessory bonded through an app out of that list. Two consequences:
+pairing and unpairing have to live in our own UI, since the user has nowhere else to do it,
+and CoreBluetooth will trigger the SMP exchange itself when the peripheral asks for
+encryption, which is not something the app drives explicitly.
+
 What is shared with the other transports: everything above the link. The NSP header, the
 route serializer and the navigation database layout are identical over USB and BLE, so the
 iOS work is a BLE transport plus a bridge to the same serializer, not a second
@@ -411,7 +441,7 @@ gives 7-day builds, which is enough to test.
 | `distance`, `ascent`, `descent` in the descriptor: supplied by the application, not re-derivable from a GPX to better than 0.13 % | low | copy or approximate |
 | The semantics of the route index's `@12` field, which the `sync` capture contradicts | low, explained by a SuuntoLink bug | hardware |
 | Whether the `0x0b25` is mandatory to write a route | medium: determines POI survival | hardware, milestone 4 |
-| Whether `WhitelistedBleDevices.Device.IsNspCapable` merely records how the pairing was made, or gates the use of `EncodingKey` as a session token. It read 1 on every slot of `ambit3full` and 0 on a bond created from the phone's Bluetooth settings | blocks wireless | milestone 7: pair from inside the Suunto app and read again |
+| Whether the watch enforces `WhitelistedBleDevices.Device.IsNspCapable` when validating a login, or merely records it. Pairing does not set it, from inside the Suunto app or outside, and SuuntoLink never writes that entry, so it has to be written through `0x1101` | blocks wireless | milestone 7, step 2: write the entry, then attempt the BLE login |
 | The `BlePairingInfo` region declared by the `0x0b21`, 450 bytes at address 1332, never read by SuuntoLink in any capture | low, the whitelist is the shorter path | read it via `0x0b17` |
 
 ## The original documents are partly wrong
