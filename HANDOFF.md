@@ -250,6 +250,18 @@ such guess.
 Incidentally the SDS list holds more POIs than the watch does, which is the "use on the watch"
 toggle doing its job.
 
+**Not a casualty of the Suunto app transition**, which is the natural suspicion given how
+grudging Ambit support became after Movescount: the watch was nearly abandoned outright and
+SuuntoLink is the bare minimum added later, after community pressure. That era is real and this
+project has measured it - see `IsNspCapable` above, a capability the old stack maintained and
+nothing in the current software sets. But it does not explain this field, for one decisive
+reason: **the watch does store altitude, on route points.** The 12-byte point record carries a
+u16 at offset 8, and `route128km` fills it on 852 points, from 21 to 182 m. So the navigation
+database is not altitude-blind; a route point carries elevation and a POI does not. That is a
+scoping decision in the original firmware, in a fixed-stride flash record that the same ten
+fields describe on a different product line two firmware generations apart. No application, well
+written or not, can add a field the firmware has no room for.
+
 ### What the watch can already do with POIs, and what that leaves us
 
 Established on hardware 2026-08-04. A POI can be created three ways without any of our code:
