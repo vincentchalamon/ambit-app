@@ -224,19 +224,36 @@ a real erase? No. `routedelete` **is** that operation captured, and `write_nav.p
 byte-identical to it, so the official path rewrites the same two headers and leaves the same data
 behind. There is nothing extra to run.
 
-One thing in the corpus does erase the region completely, and the region checksums in each
-`0x0b21` date it:
+Something did erase the region completely at some point, and the per-region checksums date the
+window without identifying the cause:
 
 | capture | Routes region checksum | state |
 |---|---|---|
 | `route128km` 07-29, after its write | `CEB74794...` | two routes |
 | `orbitsync` 07-31 11:46 | `CEB74794...` | unchanged, routes intact |
-| `firmware` 07-31 11:59, read at message 8476 of 8684 | `FFFFFFFF...` | **wholly erased** |
+| `firmware` 07-31 11:59, read at message 8476 of 8684 | `FFFFFFFF...` | wholly erased |
 
-That read sits after the firmware writes, not before, so **installing firmware wipes the whole
-navigation region to `0xff`**. The routes recovered on 08-04 were therefore pushed again after
-that, which is why they are byte-identical to the 07-29 capture: the same GPX through the same
-application produces the same bytes, which is the whole point of this project's byte-exactness.
+An earlier version of this section concluded that installing firmware performs the wipe. **That
+is not established**, and the correction came from the person holding the watch: he had factory
+reset it in that same window, precisely so as to capture a clean firmware installation. The
+`firmware` capture has no `0x0b21` before its firmware transfer - the two reads are at messages
+8476 and 8630 of 8684 - so nothing in the corpus distinguishes the factory reset from the
+firmware install as the eraser. Window known, cause unknown.
+
+What the capture does establish, and it is the more useful half, is **how the data came back**.
+Right after that all-`0xff` read, the same session writes 18 chunks of Routes totalling 14476
+bytes and 2 of Waypoints, alongside 73 of `GpsSGEE`, and closes on
+`0x0b18` hashes of `CEB74794...` and `D6C3E6F2...` - the same two the `route128km` capture closed
+on, and the same two `restore` recomputes. So a sync re-pushes whatever the application has
+marked "use on the watch", immediately, in the same session as the firmware install. Nothing was
+recovered from before the erase: the data read back on 08-04 dates from that re-push, and is
+byte-identical to 07-29 only because the same routes through the same application produce the
+same bytes.
+
+Which has an operational edge worth carrying: **any SuuntoLink sync restores the application's
+selected routes over whatever is on the watch.** So a route this project writes will be replaced
+the next time the watch meets SuuntoLink, and a test whose result is checked after such a sync
+proves nothing.
 
 So the consequences of a delete not being a wipe:
 
