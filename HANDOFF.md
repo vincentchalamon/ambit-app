@@ -17,7 +17,7 @@ for the application: a fork of `guiguoz/opensportsync` (React Native + `libambit
 | 1 - analysis tooling | **done** |
 | 2 - remaining format fields | **done** |
 | 3 - serializer, Python and C | **done**, bit-exact against the captures |
-| 4 - first real write (reset) | **done** on hardware 2026-08-04 |
+| 4 - first real write (reset) | **done** on hardware 2026-08-04, and an undelete on top of it |
 | 5 - first real route | **ready**, needs the watch |
 | 6 - Android USB-OTG | **to do**, see below |
 | 7 - BLE | **in progress**: GATT roles settled, token hypothesis confirmed on hardware, one open flag |
@@ -201,7 +201,19 @@ So undoing an erase means putting correct counts and CRCs back into two headers:
 both headers, and computes the closing hashes over the saved region with the new header patched
 in - exact rather than guessed, since the whole region is in hand. Verified before ever being
 sent: both headers and **both closing SHA-256 hashes come out byte-identical to the
-`route128km` capture** of five days earlier. `assets/backup-*.bin` keeps that pair of regions,
+`route128km` capture** of five days earlier.
+
+**Run on the watch 2026-08-04, and it worked**: both routes came back and the watch lists them.
+Which validates more than the undelete. The reset had only ever proved the watch accepts headers
+full of zeros; this proved it accepts counts, a CRC and a closing SHA-256 that we computed, and
+acts on them. What it does **not** prove is writing a route body - the 1188 points were already
+in flash and were never sent. Milestone 5 remains untested.
+
+The live run also sent a `0x0b25` of 57 bytes that the rehearsal had not shown, putting the
+watch's one POI back. That was a flaw in the rehearsal rather than a surprise: a dry-run has no
+watch to read the POI list from, so it announced one message fewer than the real write. It now
+says so instead of printing "no POI to put back", because a rehearsal that undercounts is worse
+than one that admits a gap. `assets/backup-*.bin` keeps that pair of regions,
 the first bytes this project ever read off the watch rather than inferred, and the selftest
 rebuilds the restore from them.
 
@@ -342,10 +354,15 @@ the answer splits:
   layout, hardcoded rather than read from the schema so that `sbem_schema.py --verify` remains
   an independent check of one against the other.
 
-Still open, and it is the interesting half of the objection: the watch can navigate a recorded
-activity, Navigation then Logbook. Whether that materialises an entry in the Routes region, and
-therefore a route with per-point altitude that the watch itself filled in, is unknown and worth
-a look - `pois` and `logbook` are read-only, so it costs nothing to check before and after.
+Answered 2026-08-04, and the answer is no. Navigating a recorded activity, Navigation then
+Logbook, shows a **Track back** with a waypoint list of `Begin`, `POI 1`, `POI 2` and `End` -
+but the navigation database read back afterwards is empty, both CRCs agreeing. So a Track back
+is built from the move in `ExerciseLog` and materialises nothing in the Routes region.
+
+Those `POI n` entries are not stored POIs either: the watch held exactly one POI throughout.
+The firmware synthesises them when you start routing from the logbook. So "POI" on that screen
+means a waypoint the firmware placed along the track, not an entry in the POI store, and the two
+should not be confused when reading that UI.
 
 Decoding a move's samples is a separate job, not started, but the same read narrowed it down.
 Each move's `MemArea.StartAddress1`/`EndAddress1` falls inside the `ExerciseLog` region the
