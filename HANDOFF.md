@@ -215,6 +215,29 @@ ndkVersion "27.1.12297006"        react-native 0.84.1
    selective, and the last message is the restore. `write_nav.py` now does the same, and its
    `0x0b25` reproduces the capture's byte for byte.
 
+### What the watch can already do with POIs, and what that leaves us
+
+Established on hardware 2026-08-04. A POI can be created three ways without any of our code:
+
+1. on the watch, from the current position;
+2. on the watch, by typing a latitude and a longitude;
+3. in the Suunto app, by toggling "use on the watch", then syncing by cable with SuuntoLink.
+
+Two things follow for the application. Route 3 is the only exact one, and it depends on both
+the Suunto app and SuuntoLink, which is precisely the dependency this project exists to
+remove - so writing POIs ourselves is a real feature, not a nicety. It is also not needed to
+finish milestone 5, and it has not been built: `write_nav.py` preserves the POIs it finds but
+cannot yet create one. The format is fully known, `poiimport` shows a new POI going first in
+the list, and there is a byte-exact template to build against, so it is a short job when it
+comes up.
+
+Route 2 has a precision limit worth knowing: the watch's own entry screen takes five decimal
+places where the record stores seven, so a hand-typed POI lands within about a metre and its
+last two digits are zero. Which also means a POI typed on the watch is a cheap way to create a
+record with coordinates we chose, if the decoding ever needs checking against a known value.
+What the screen displays depends on `sml.DeviceSettings.GpsPositionFormat`, the enum the schema
+lists with fifteen values from `WGS84 d` to `NZTM2000`, so do not assume decimal degrees.
+
 ### Verify
 
 Without a device: `make -C csrc test` validates the serializer, and the C port of the
