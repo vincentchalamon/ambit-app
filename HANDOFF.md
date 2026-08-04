@@ -178,6 +178,42 @@ The read validates itself: the regions carry a CRC over the descriptors and the 
 matches on all six captures that hold a database. An empty one is the documented exception,
 where the field is a literal zero rather than the CRC of nothing.
 
+### An erase is not a wipe, and an undelete is two headers
+
+A region read off the watch on 2026-08-04, after the milestone 4 reset had emptied it, shows
+what the reset actually does. The headers say zero routes and zero waypoints. Behind them,
+**everything is still there**: both route descriptors, all 1188 points, all 11 waypoints. The
+reset rewrites 6 bytes and 32 bytes and nothing else.
+
+That is not an inference. The surviving bytes reproduce the CRCs of the `route128km` capture
+exactly, `0x8aaf` over the descriptors and points and `0x6270` over the waypoint descriptors,
+so the data survived byte for byte, altitudes included, 852 of them from 21 to 182 m.
+
+So undoing an erase means putting correct counts and CRCs back into two headers:
+
+```
+./tools/write_nav.py nav --save backup     # read it off the watch first
+./tools/write_nav.py restore backup        # dry-run, as ever
+./tools/write_nav.py restore backup --write
+```
+
+`build_restore` counts what survived from the tables rather than the zeroed counters, rebuilds
+both headers, and computes the closing hashes over the saved region with the new header patched
+in - exact rather than guessed, since the whole region is in hand. Verified before ever being
+sent: both headers and **both closing SHA-256 hashes come out byte-identical to the
+`route128km` capture** of five days earlier. `assets/backup-*.bin` keeps that pair of regions,
+the first bytes this project ever read off the watch rather than inferred, and the selftest
+rebuilds the restore from them.
+
+Two consequences worth carrying into the application. A backup is cheap and should be taken
+before every write, since it makes any write reversible. And **an erase leaves the data
+readable**, so a region dump can carry routes and waypoints that the watch no longer shows -
+worth knowing before sharing one.
+
+Incidentally this confirms a modelling assumption that had only ever been inferred from
+matching hashes: unwritten flash really does read back as `0xff`, 96.5 % of the Waypoints
+region and 90.9 % of the Routes region.
+
 Three experiments, in this order, one command each:
 
 ```
