@@ -111,6 +111,26 @@ from any of these machines; only the dynamic hooking needs a device. Which is an
 the USB whitelist read came first. The GATT role test was done on the iPhone for the same
 reason.
 
+## The captures come from two different watch states
+
+The watch was factory reset on 2026-07-31, on purpose, to record a firmware installation. That
+splits the corpus, and knowing where explains apparent contradictions in it:
+
+| captures | moves in the logbook | POIs |
+|---|---|---|
+| `ambit3full`, `sync` (07-22) | 11 | 4 |
+| `poiimport`, `routedelete`, `route12km`, `route128km` (07-29) | 11 | 4 to 5 |
+| `orbitsync`, `orbitsync2` (07-31) | 1 | 8 |
+| `firmware` (07-31, later) | 0 | none read |
+
+So `orbitsync` showing more POIs than `route12km` is not a contradiction: the POIs were pushed
+again from the app after the reset. The route and waypoint corpus that the format was verified
+against is entirely from the earlier state, which is consistent within itself.
+
+`ambit3full` is the only capture carrying a `0x1100` reply, and it is pre-reset. That is why it
+is the sole evidence of `IsNspCapable=1`, and why comparing today's watch against it is
+comparing across a factory reset rather than across a change some software made.
+
 ## What to know about openambit before touching it
 
 Four observed traps that will otherwise cost time:
@@ -431,8 +451,10 @@ still reads 0.** That reading is dead.
 What the third read adds, and it is more useful than the answer itself:
 
 - **The flag is 0 on all eight slots**, the seven empty ones included, where `ambit3full` had
-  1 on all eight. So it is not a per-bond attribute a pairing flow sets, it is a table-wide
-  value that something changed between the two.
+  1 on all eight. The watch was factory reset between the two captures, deliberately, to record
+  a firmware installation - so 0 is the post-reset default and the ones in `ambit3full` had been
+  put there by the Movescount-era stack. Which is the same conclusion by a cleaner route: it is
+  a stored value, its default is 0, and nothing available today writes 1.
 - **SuuntoLink is not what sets it.** Its `0x1101` in `ambit3full` writes the personal
   settings and the eight `Pods`, and no `0x41` at all. Whatever wrote those 1s was something
   else, most likely the Movescount phone app, which did speak NSP over BLE and no longer
