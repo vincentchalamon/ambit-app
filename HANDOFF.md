@@ -17,7 +17,7 @@ for the application: a fork of `guiguoz/opensportsync` (React Native + `libambit
 | 1 - analysis tooling | **done** |
 | 2 - remaining format fields | **done** |
 | 3 - serializer, Python and C | **done**, bit-exact against the captures |
-| 4 - first real write (reset) | **ready**, needs the watch |
+| 4 - first real write (reset) | **done** on hardware 2026-08-04 |
 | 5 - first real route | **ready**, needs the watch |
 | 6 - Android USB-OTG | **to do**, see below |
 | 7 - BLE | **in progress**: GATT roles settled, token hypothesis confirmed on hardware, one open flag |
@@ -134,10 +134,18 @@ On the other hand, reusable as is: `crc16_ccitt_false`, `sha256`,
 
 ## Milestones 4 and 5 - real writes, need the watch
 
-Everything is ready on the software side. `tools/write_nav.py` produces exactly the
-SuuntoLink bytes: verified payload by payload against `routedelete` (4 payloads) and
-`route12km` (12 payloads), SHA-256 hash included. HID framing is proven by a round trip
-over **4724 messages and 47117 reports of 64 bytes** re-encoded identically.
+**Milestone 4 is done, 2026-08-04.** A reset was written to the real watch and the routes
+disappeared from it, so the whole chain holds end to end: framing, payloads, closing hashes and
+the commit. Two things the run also settled. The watch's own `0x0b21` reply matched every
+region address and size this project had assumed, live, for the first time. And the POIs went
+with the routes, which is the subject of point 5 of milestone 6 above and is now fixed.
+
+Milestone 5, a real route, is the same procedure with one more command and has not been run.
+
+`tools/write_nav.py` produces exactly the SuuntoLink bytes: verified payload by payload against
+`routedelete` (5 payloads) and `route12km` (13 payloads), SHA-256 hash and POI restore included.
+HID framing is proven by a round trip over **4724 messages and 47117 reports of 64 bytes**
+re-encoded identically.
 
 Before the first write: **write down by hand the routes and POIs present on the watch**,
 because a successful write overwrites the whole navigation database. Also try reading the
@@ -199,8 +207,13 @@ ndkVersion "27.1.12297006"        react-native 0.84.1
    writes, unlike openambit's Ambit2 path which sends it first.
 4. Expose it through `jni_bridge.cpp` and `AmbitUsbModule.kt`, then wire a GPX import into
    the React Native UI.
-5. Do **not** send the `0x0b25`: it is the watch's complete POI list, and omitting it should
-   preserve them. To be confirmed on hardware.
+5. **Do send the `0x0b25`, it is what preserves the POIs.** This document used to say the
+   opposite, that omitting the watch's complete POI list would leave it alone. Hardware says
+   otherwise: a reset with no `0x0b25` erased every POI on 2026-08-04. Reading `routedelete`
+   again with that in mind shows the whole shape of it - SuuntoLink asks for the list with
+   `0x0b24`, wipes the database, then writes the list back with `0x0b25`. The wipe is not
+   selective, and the last message is the restore. `write_nav.py` now does the same, and its
+   `0x0b25` reproduces the capture's byte for byte.
 
 ### Verify
 
@@ -415,13 +428,13 @@ scan-and-connect is enough, and the unusual `CBPeripheralManager` design the APK
 for is not needed. Scanning finds nothing until "connect to mobile app" is triggered on the
 watch, so the UI has to tell the user to do that rather than waiting on an empty scan.
 
-Also observed while testing milestone 7: **the watch never appears in iOS Settings >
-Bluetooth**, before or after pairing, and can only be paired and unpaired from inside the
-Suunto app. The bond is real - the watch stores an LTK, an IRK and `IsAuthenticated=1` for the
-phone - but iOS keeps a BLE accessory bonded through an app out of that list. Two consequences:
-pairing and unpairing have to live in our own UI, since the user has nowhere else to do it,
-and CoreBluetooth will trigger the SMP exchange itself when the peripheral asks for
-encryption, which is not something the app drives explicitly.
+Also observed while testing milestone 7, and the asymmetry matters: **an unpaired watch does
+not appear in iOS Settings > Bluetooth at all**, so pairing cannot be started from there. Once
+the Suunto app has paired it, it does appear, and can be forgotten from Settings like any other
+accessory. So pairing has to be initiated by the app, through CoreBluetooth, which drives the
+SMP exchange itself when the peripheral asks for encryption; unpairing can happen in either
+place. Our own app therefore owns the pairing flow, and has to cope with the bond vanishing
+behind its back when the user forgets the device in Settings.
 
 What is shared with the other transports: everything above the link. The NSP header, the
 route serializer and the navigation database layout are identical over USB and BLE, so the
@@ -440,7 +453,7 @@ gives 7-day builds, which is enough to test.
 | The exact epoch of the route timestamp. Same clock as the waypoint tail date, verified to the second, but the epoch is not a known round date (empirically `1953-11-25T17:31:44`) | low, metadata | hardware |
 | `distance`, `ascent`, `descent` in the descriptor: supplied by the application, not re-derivable from a GPX to better than 0.13 % | low | copy or approximate |
 | The semantics of the route index's `@12` field, which the `sync` capture contradicts | low, explained by a SuuntoLink bug | hardware |
-| Whether the `0x0b25` is mandatory to write a route | medium: determines POI survival | hardware, milestone 4 |
+| ~~Whether the `0x0b25` is mandatory to write a route~~ | answered 2026-08-04: **it is**. A navigation write erases the POI store, and the `0x0b25` puts it back | done |
 | Whether the watch enforces `WhitelistedBleDevices.Device.IsNspCapable` when validating a login, or merely records it. Pairing does not set it, from inside the Suunto app or outside, and SuuntoLink never writes that entry, so it has to be written through `0x1101` | blocks wireless | milestone 7, step 2: write the entry, then attempt the BLE login |
 | The `BlePairingInfo` region declared by the `0x0b21`, 450 bytes at address 1332, never read by SuuntoLink in any capture | low, the whitelist is the shorter path | read it via `0x0b17` |
 
