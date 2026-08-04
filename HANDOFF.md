@@ -20,8 +20,8 @@ for the application: a fork of `guiguoz/opensportsync` (React Native + `libambit
 | 4 - first real write (reset) | **ready**, needs the watch |
 | 5 - first real route | **ready**, needs the watch |
 | 6 - Android USB-OTG | **to do**, see below |
-| 7 - BLE | **to do**, token research started |
-| 8 - iOS | out of scope for now: Xcode, therefore macOS |
+| 7 - BLE | **in progress**: GATT roles settled, token hypothesis confirmed on hardware, one open flag |
+| 8 - iOS | **unblocked**: a Mac and an iPhone are available, and a plain central is enough |
 
 The binary format of the navigation database is **fully decoded and verified**. The
 complete specification is in [`tools/README.md`](tools/README.md): memory map, structures,
@@ -98,10 +98,13 @@ trusting the constants.
 | Suunto Ambit3 Peak + cable | The reference watch. Everything hardware-dependent goes through it. |
 | Suunto Kailash + cable | Model `Hoopoe`, fw 2.0.5. Its schema descriptor is in `assets/`, 165 entries against the Ambit3's 324: a free point of comparison when a field resists. |
 
-No Android device yet, and that is the one real constraint: the Frida route of milestone 7
-below is unavailable until one arrives. Static analysis of the APK libraries works from any
-of these machines; only the dynamic hooking needs Android. Which is another reason to try
-the USB whitelist read first.
+The only Android on hand is an Android 4.0 device, which predates BLE central support and
+cannot run a current nRF Connect build, so treat it as no Android at all. That is the one
+real constraint: the Frida route of milestone 7 below is unavailable until modern Android
+hardware arrives, and milestone 6 needs it too. Static analysis of the APK libraries works
+from any of these machines; only the dynamic hooking needs a device. Which is another reason
+the USB whitelist read came first. The GATT role test was done on the iPhone for the same
+reason.
 
 ## What to know about openambit before touching it
 
@@ -212,6 +215,29 @@ and BLE: a 12-byte header
 `[u8 msgId][u8 subId][u8 flags][u8 errFlags][u16 connId][u16 pktNum][u32 dataSize]`.
 The route serializer is the same in both cases.
 
+**GATT roles, settled on hardware 2026-08-03.** Scanned with nRF Connect on an iPhone, watch
+idle then with "connect to mobile app" triggered:
+
+- idle, the watch does not advertise at all, nothing is discoverable;
+- once connect mode is triggered, the watch appears in the scan list, advertising
+  `98ae7120-e62e-11e3-badd-0002a5d5c51b`.
+
+The device that advertises is the peripheral, so **the watch is the peripheral and GATT
+server, the phone is the central and client.** That is the ordinary arrangement, merely gated
+behind an explicit trigger on the watch instead of advertising at rest.
+
+This **refutes** section 2 of `BLE-FINDINGS-APK-ANALYSIS-2026-08-02_1.md`, which read
+`createGattServer` in `AmbitDevice.connect()` as meaning the phone is the server and the watch
+the central. Whatever that Java call is for - the phone may well run its own server in
+addition, both roles can coexist on one device - it is not the transport that carries NSP.
+The field report that produced the scan result above states the opposite conclusion in its
+own summary line; the measurement is what counts, and the measurement says peripheral.
+
+Practical consequence, and it is good news: a plain scan-and-connect central is enough.
+`CBCentralManager` on iOS, ordinary `BluetoothGatt` on Android. The `CBPeripheralManager`
+path that the APK note called for is not needed, which removes the one materially unusual
+piece from the iOS design.
+
 ### The token is probably not derived at all - read it over USB first
 
 Over USB there is **no** login at all. Over BLE there is a login local to the link, not tied
@@ -248,19 +274,47 @@ token is a per-bond key stored on the watch, and both halves of it are reachable
 USB channel this project already drives - `0x1100` reads the whole settings tree (payload:
 four zero bytes), `0x1101` writes it (the `ambit3full` capture has one).
 
-Test it in this order, cheapest first:
+### Step 1 done on hardware, 2026-08-03: the hypothesis holds
 
-1. Read the live whitelist off the watch over USB and check it matches what the capture
-   shows. Non-destructive, read-only, one `0x1100` round trip:
+Run against the live watch, before and after re-pairing it with the phone. Values are not
+reproduced here, they are link keys; run the command yourself.
 
-   ```
-   ./tools/write_nav.py settings --from "assets/ambit3 pcap/ambit3full"   # rehearsal
-   ./tools/write_nav.py settings                                          # the watch
-   ```
-2. Write a whitelist entry of your own: your phone's MAC, a 16-byte `EncodingKey` you
-   choose, `IsNspCapable=1`. Then open BLE and send those same 16 bytes as the NSP LOGIN
-   body. If the watch accepts, the milestone is closed with no reverse engineering at all.
-3. Only if that fails, go back to recovering a derivation (below).
+| | before re-pair | after re-pair, same phone |
+|---|---|---|
+| whitelist slots | 8, all empty | 8, one populated |
+| `EncodingKey` | none | 16 bytes, **different from the one in `ambit3full`** |
+| `EncodingDiv` | 0 | changed too |
+| `IsAuthenticated` | 0 | 1 |
+| `IsNspCapable` | 1 on every empty slot | **0** on the new bond |
+
+Three things follow. The whitelist had been cleared since `ambit3full` was captured, so that
+run was a genuine fresh pairing rather than a stale read. Re-pairing the same phone yields a
+**new** `EncodingKey`, readable over USB within seconds and with `IsAuthenticated=1`: the key
+is per-bond and not derived from anything stable like the serial, which is what the hypothesis
+predicted. And as a side effect the key sitting in `ambit3full` is now stale, so that capture
+no longer carries a live secret.
+
+**The open question is `IsNspCapable`, which flipped 1 to 0.** In `ambit3full` it was 1 on
+every slot, including the empty ones and the HR belt, so 1 looks like the factory default and
+something actively set it to 0. Two readings, and they have opposite consequences:
+
+- the flag is set by the **app-level** pairing flow, not by SMP, and the new bond was made
+  from the phone's Bluetooth settings rather than from inside an app that speaks NSP. Benign:
+  pair again from within the Suunto app and it should come back to 1.
+- or the flag **gates** the use of `EncodingKey` as a session token, in which case a bond
+  created outside the app is useless for our purpose and step 2 has to set it explicitly.
+
+Distinguishing them is cheap and comes before anything else on this milestone: pair from
+inside the Suunto app, read again, and see whether `IsNspCapable` returns to 1. If the modern
+app refuses to pair an Ambit3 at all, then the flag has to be written by us, which is step 2
+anyway.
+
+### Step 2, still to do
+
+Write a whitelist entry of your own through `0x1101`: your phone's MAC, a 16-byte
+`EncodingKey` you choose, and `IsNspCapable=1` given the above. Then open BLE and send those
+same 16 bytes as the NSP LOGIN body. If the watch accepts, the milestone closes with no
+reverse engineering at all. If it does not, fall back to recovering a derivation, below.
 
 Caveat: the whitelist is written by the pairing flow, so a key you inject may be overwritten,
 and link-layer encryption is a separate matter from the NSP login - Android will not let you
@@ -324,6 +378,25 @@ the **vtable**. Three routes, and note that in all of them the function to look 
 The token only blocks wireless. Milestone 6's USB-OTG does not need it, and already delivers
 a usable application.
 
+## Milestone 8 - iOS
+
+No longer out of scope: a Mac with Xcode and an iPhone are both available, and the transport
+turned out to be ordinary.
+
+What is settled: the watch is the peripheral and GATT server, so a plain `CBCentralManager`
+scan-and-connect is enough, and the unusual `CBPeripheralManager` design the APK note called
+for is not needed. Scanning finds nothing until "connect to mobile app" is triggered on the
+watch, so the UI has to tell the user to do that rather than waiting on an empty scan.
+
+What is shared with the other transports: everything above the link. The NSP header, the
+route serializer and the navigation database layout are identical over USB and BLE, so the
+iOS work is a BLE transport plus a bridge to the same serializer, not a second
+implementation of the format.
+
+What is not settled: the session token, milestone 7, which blocks any BLE transport
+including this one. And deploying to a device needs a signing identity; free provisioning
+gives 7-day builds, which is enough to test.
+
 ## What remains unknown
 
 | Unknown | Risk | How to close it |
@@ -333,7 +406,7 @@ a usable application.
 | `distance`, `ascent`, `descent` in the descriptor: supplied by the application, not re-derivable from a GPX to better than 0.13 % | low | copy or approximate |
 | The semantics of the route index's `@12` field, which the `sync` capture contradicts | low, explained by a SuuntoLink bug | hardware |
 | Whether the `0x0b25` is mandatory to write a route | medium: determines POI survival | hardware, milestone 4 |
-| The BLE session token. Probably `WhitelistedBleDevices.Device.EncodingKey`, readable and writable over USB, rather than something derived | blocks wireless | milestone 7, step 1 |
+| Whether `WhitelistedBleDevices.Device.IsNspCapable` merely records how the pairing was made, or gates the use of `EncodingKey` as a session token. It read 1 on every slot of `ambit3full` and 0 on a bond created from the phone's Bluetooth settings | blocks wireless | milestone 7: pair from inside the Suunto app and read again |
 | The `BlePairingInfo` region declared by the `0x0b21`, 450 bytes at address 1332, never read by SuuntoLink in any capture | low, the whitelist is the shorter path | read it via `0x0b17` |
 
 ## The original documents are partly wrong
