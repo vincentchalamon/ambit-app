@@ -275,11 +275,11 @@ reached the watch through Komoot, then the Suunto app, then SuuntoLink, so all o
 evidence about what SuuntoLink writes rather than what the watch can hold. Fair objection, and
 the answer splits:
 
-- **An activity the watch records does carry altitude.** Its own logbook index gives
-  `Header.Altitude.Min`, `.Max`, `.MinTime`, `.MaxTime` and a plain `Header.Altitude` per move,
-  and they are populated: 15 to 21 m on a run, with `Ascent=9` and `Descent=6`. Nothing of
-  SuuntoLink's is involved in producing those. `-32768`/`32767` on other moves is the nillable
-  sentinel, a recording with no altitude fix.
+- **An activity the watch records does carry altitude.** Settled on a move recorded
+  2026-08-04, with SuuntoLink nowhere in the chain: `Altitude.Min=31`, `Max=35`, and the
+  instants each occurred, `MinTime=1976` and `MaxTime=80976` in milliseconds, plus
+  `Ascent=9`, `Descent=9`, `AscentTime=331`, `DescentTime=154` and a plain `Altitude=31`.
+  `-32768`/`32767` on other moves is the nillable sentinel, a recording that never got a fix.
 - **A POI still cannot, whoever writes it.** Read back from the watch, a POI it created
   itself, with a live fix and a barometer at hand, has the same ten fields and no altitude.
   That closes the question: it is the format, not the software.
@@ -305,9 +305,25 @@ activity, Navigation then Logbook. Whether that materialises an entry in the Rou
 therefore a route with per-point altitude that the watch itself filled in, is unknown and worth
 a look - `pois` and `logbook` are read-only, so it costs nothing to check before and after.
 
-Decoding a move's samples is a separate job, not started: the logbook index gives each move's
-flash range, `0x0b17` reads flash, and `assets/logbook/*.bin` holds ten of them saved by
-SuuntoLink, `PMEM` magic, to work against offline.
+Decoding a move's samples is a separate job, not started, but the same read narrowed it down.
+Each move's `MemArea.StartAddress1`/`EndAddress1` falls inside the `ExerciseLog` region the
+`0x0b21` declares at 2600000 over 5526464 bytes - checked on three moves from both watch states
+- so reading a move means reading that region through the pmem20 path, `0x0b17`. The 2026-08-04
+move spans 28702 bytes for 12.1 minutes, which sizes the job. And `assets/logbook/*.bin` holds
+ten moves saved by SuuntoLink, `PMEM` magic, to work against offline.
+
+Two things about the index itself, from cross-checking that move's numbers:
+
+- **`Header.Speed.Avg` and `.Max` are in hundredths of a km/h**, which no `<MOD>` states. 3328 m
+  over `Duration=7279`, that is 727.9 s, is 16.46 km/h, and the field reads 1648. Agreement to
+  0.12 %. Read as hundredths of m/s it would be 59 km/h, and `Max=2617` would be 94 km/h on a
+  bicycle.
+- **`Header.Temperature.Min` and `.Max` do not decode consistently and should not be trusted.**
+  The descriptor makes them `uint8` with `((1/10)*x)+273.15`, which caps at 25.5 C and gives
+  min above max on two pre-reset moves, 24.4 against 2.9 and 23.3 against 3.9 - impossible.
+  Reading the byte as signed fixes the ordering, -1.2 and -2.3, but leaves values too cold for
+  the dates, and the August move reads 2.3 to 5.6 C either way. Everything after that field pair
+  decodes plausibly, so the record alignment is right and the problem is the pair itself. Open.
 
 **Not a casualty of the Suunto app transition**, which is the natural suspicion given how
 grudging Ambit support became after Movescount: the watch was nearly abandoned outright and
