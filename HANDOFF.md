@@ -217,9 +217,45 @@ than one that admits a gap. `assets/backup-*.bin` keeps that pair of regions,
 the first bytes this project ever read off the watch rather than inferred, and the selftest
 rebuilds the restore from them.
 
-Two consequences worth carrying into the application. A backup is cheap and should be taken
-before every write, since it makes any write reversible. And **an erase leaves the data
-readable**, so a region dump can carry routes and waypoints that the watch no longer shows -
+### What does erase the region, and what does not
+
+Asked 2026-08-04: is there any point deleting the routes from the Suunto app and syncing, to get
+a real erase? No. `routedelete` **is** that operation captured, and `write_nav.py reset` is
+byte-identical to it, so the official path rewrites the same two headers and leaves the same data
+behind. There is nothing extra to run.
+
+One thing in the corpus does erase the region completely, and the region checksums in each
+`0x0b21` date it:
+
+| capture | Routes region checksum | state |
+|---|---|---|
+| `route128km` 07-29, after its write | `CEB74794...` | two routes |
+| `orbitsync` 07-31 11:46 | `CEB74794...` | unchanged, routes intact |
+| `firmware` 07-31 11:59, read at message 8476 of 8684 | `FFFFFFFF...` | **wholly erased** |
+
+That read sits after the firmware writes, not before, so **installing firmware wipes the whole
+navigation region to `0xff`**. The routes recovered on 08-04 were therefore pushed again after
+that, which is why they are byte-identical to the 07-29 capture: the same GPX through the same
+application produces the same bytes, which is the whole point of this project's byte-exactness.
+
+So the consequences of a delete not being a wipe:
+
+- **Nothing functional.** The watch goes by the header counts. A deleted route does not come
+  back, and it costs nothing against the 50-route or 10000-point budget, because the next write
+  rewrites the tables wholesale.
+- **Privacy only.** Old routes and waypoints stay readable to anything that can read flash,
+  which now includes `nav`. A delete is not enough before lending or selling the watch.
+- **And it is what made the undelete possible**, so it is not purely a defect.
+
+A `wipe` action would be a 130000-byte write rather than 38 bytes, and it is not built. Worth
+knowing before anyone writes one: on NOR flash, programming can only clear bits, and restoring
+them to 1 needs a page erase. So writing `0xff` may do nothing at all, depending on whether the
+pmem20 path erases before it programs, which we have never established. Writing **zeros** would
+reliably destroy the readable names and coordinates even where it cannot restore the erased
+state, and that is what matters for privacy. Untested, and with no capture to check against.
+
+Two habits for the application meanwhile. A backup is cheap and makes any write reversible, so
+take one first. And a region dump can carry routes and waypoints the watch no longer shows -
 worth knowing before sharing one.
 
 Incidentally this confirms a modelling assumption that had only ever been inferred from
